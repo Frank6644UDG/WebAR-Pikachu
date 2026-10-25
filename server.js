@@ -29,7 +29,7 @@ function auth(req, res, next) {
   res.set('WWW-Authenticate', 'Basic realm="Editor"').status(401).send('Se requiere contraseña');
 }
 
-const ALLOWED = ['.mind', '.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const ALLOWED = ['.mind', '.mp4', '.mov', '.webm', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp3', '.m4a', '.ogg'];
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -55,6 +55,8 @@ function normalize(e) {
 const cleanEl = (x = {}) => ({
   type: ['video', 'image', 'text'].includes(x.type) ? x.type : 'text',
   src: String(x.src || ''),
+  srcAlt: String(x.srcAlt || ''),
+  audioSrc: String(x.audioSrc || ''),
   texts: typeof x.texts === 'object' && x.texts ? x.texts : {}
 });
 const clean = (b = {}) => ({
