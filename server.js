@@ -15,7 +15,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '[]');
 
-const load = () => JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+const load = () => JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')).map(normalize);
 const save = (list) => fs.writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
 
 // Protección simple con contraseña para el editor y la API de escritura
@@ -43,15 +43,25 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 }
 });
 
+// Convierte experiencias antiguas (un video + textos) al formato de elementos
+function normalize(e) {
+  if (!Array.isArray(e.elements)) {
+    e.elements = [];
+    if (e.videoSrc) e.elements.push({ type: 'video', src: e.videoSrc, texts: {} });
+    if (e.texts && Object.keys(e.texts).length) e.elements.push({ type: 'text', src: '', texts: e.texts });
+  }
+  return e;
+}
+const cleanEl = (x = {}) => ({
+  type: ['video', 'image', 'text'].includes(x.type) ? x.type : 'text',
+  src: String(x.src || ''),
+  texts: typeof x.texts === 'object' && x.texts ? x.texts : {}
+});
 const clean = (b = {}) => ({
   name: String(b.name || 'Sin nombre').slice(0, 100),
   targetSrc: String(b.targetSrc || ''),
   silhouetteSrc: String(b.silhouetteSrc || ''),
-  videoSrc: String(b.videoSrc || ''),
-  videoScale: Number(b.videoScale) || 1,
-  offsetX: Number(b.offsetX) || 0,
-  offsetY: Number(b.offsetY) || 0,
-  texts: typeof b.texts === 'object' && b.texts ? b.texts : {}
+  elements: (Array.isArray(b.elements) ? b.elements : []).slice(0, 30).map(cleanEl)
 });
 
 app.use(express.json({ limit: '1mb' }));
