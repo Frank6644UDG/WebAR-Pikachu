@@ -79,9 +79,21 @@
   vid.playsInline = true; vid.setAttribute('webkit-playsinline', '');
   const hide = (list) => list.forEach((s) => $(s).classList.add('hidden'));
 
+  // Audio separado, con botón para silenciarlo
+  const SOUND = { es: ['Silenciar', 'Activar sonido'], en: ['Mute', 'Sound on'], ja: ['ミュート', '音を出す'], zh: ['静音', '开启声音'], ko: ['음소거', '소리 켜기'] };
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  const aud = new Audio();
+  const soundLabel = () => {
+    const s = SOUND[lang] || SOUND.en;
+    $('#btnSound').textContent = aud.paused ? '🔊 ' + s[1] : '🔇 ' + s[0];
+  };
+  ['play', 'pause', 'ended'].forEach((e) => aud.addEventListener(e, soundLabel));
+  const unlockAudio = () => { aud.src = SILENT; aud.play().catch(() => {}); };  // se llama con un toque del usuario (iPhone)
+  const stopAudio = () => { aud.pause(); aud.removeAttribute('src'); $('#btnSound').classList.add('hidden'); };
+
   function startAR() {
     show('screenAR');
-    idx = -1; started = false;
+    idx = -1; started = false; unlockAudio(); $('#btnSound').classList.add('hidden');
     $('#silImg').src = exp.silhouetteSrc || '';
     $('#silImg').style.display = exp.silhouetteSrc ? '' : 'none';
     hide(['#textPanel', '#modal', '#stage', '#btnNextF']);
@@ -117,19 +129,35 @@
     const last = idx === els.length - 1;
     const stage = $('#stage');
     hide(['#textPanel', '#btnNextF']);
+    stopAudio();
     if (curEl.type === 'text') { stage.classList.remove('hidden'); return showText(last); }
     vid.pause(); vid.onended = null;
     stage.classList.remove('hidden');
     if (curEl.type === 'video') {
       stage.innerHTML = ''; stage.appendChild(vid);
-      vid.src = curEl.src; vid.muted = false;
+      vid.src = pickSrc(curEl); vid.muted = false;
       vid.onended = next;
       vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}); });
     } else {
       stage.innerHTML = `<img src="${curEl.src}" alt="">`;
       $('#btnNextF').textContent = last ? t('close') : t('next');
       $('#btnNextF').classList.remove('hidden');
+      if (curEl.audioSrc) {
+        aud.src = curEl.audioSrc; aud.currentTime = 0;
+        aud.play().catch(() => {});
+        $('#btnSound').classList.remove('hidden');
+        soundLabel();
+      }
     }
+  }
+
+  // iPhone/Safari reproduce .mov con transparencia; Chrome/Android usan .webm
+  function pickSrc(el) {
+    const apple = /iP(hone|ad|od)/.test(navigator.userAgent) || /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const mov = [el.src, el.srcAlt].find((u) => /\.mov$/i.test(u || ''));
+    const webm = [el.src, el.srcAlt].find((u) => /\.webm$/i.test(u || ''));
+    const other = [el.src, el.srcAlt].find((u) => u && !/\.(mov|webm)$/i.test(u));
+    return (apple ? mov || webm : webm || mov) || other || el.src || el.srcAlt;
   }
 
   function showText(last) {
@@ -145,14 +173,14 @@
   }
 
   function resetExp() {
-    vid.pause(); vid.onended = null; started = false; idx = -1;
+    stopAudio(); vid.pause(); vid.onended = null; started = false; idx = -1;
     hide(['#textPanel', '#stage', '#btnNextF', '#modal']);
     $('#stage').innerHTML = '';
     $('#silhouette').classList.remove('hidden');
   }
 
   function closeAR() {
-    vid.pause(); vid.onended = null;
+    stopAudio(); vid.pause(); vid.onended = null;
     const scene = document.querySelector('a-scene');
     try { scene.systems['mindar-image-system'].stop(); } catch (e) {}
     $('#sceneHolder').innerHTML = '';
@@ -160,6 +188,7 @@
     show('screenEnd');
   }
 
+  $('#btnSound').onclick = () => { if (aud.paused) aud.play().catch(() => {}); else aud.pause(); soundLabel(); };
   $('#btnNextP').onclick = next;
   $('#btnNextF').onclick = next;
   init();
