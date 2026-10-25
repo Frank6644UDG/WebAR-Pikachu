@@ -40,7 +40,7 @@
 <main id="main"></main>
 <script>
 const LANGS = { es:'Español', en:'English', ja:'日本語', zh:'中文', ko:'한국어' };
-const TYPES = { video:'Video', image:'Imagen', text:'Texto' };
+const TYPES = { video:'Video', image:'Imagen / animación WebP', text:'Texto' };
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 let all = [], cur = null, tab = 'es';
@@ -66,7 +66,15 @@ function elHtml(el, i) {
   const body = el.type === 'text'
     ? `<label>Título (${LANGS[tab]})</label><input type="text" data-ti="${i}" value="${esc(tx.title)}">
        <label>Texto (${LANGS[tab]})</label><textarea data-tb="${i}">${esc(tx.body)}</textarea>`
-    : `<input type="file" data-el="${i}" accept="${el.type==='video'?'video/mp4,video/webm':'image/*'}"><small>${esc(el.src) || 'Sin archivo'}</small>`;
+    : el.type === 'video'
+      ? `<label>Video principal (.mov con transparencia para iPhone, o .mp4)</label>
+         <input type="file" data-el="${i}" data-f="src" accept=".mov,video/quicktime,video/mp4,video/webm"><small>${esc(el.src) || 'Sin archivo'}</small>
+         <label>Video alternativo (.webm con transparencia para Android y Chrome) - opcional</label>
+         <input type="file" data-el="${i}" data-f="srcAlt" accept=".webm,video/webm"><small>${esc(el.srcAlt) || 'Sin archivo'}</small>`
+      : `<label>Imagen o animación (.webp animado, .png, .jpg, .gif)</label>
+       <input type="file" data-el="${i}" data-f="src" accept="image/*"><small>${esc(el.src) || 'Sin archivo'}</small>
+       <label>Audio (opcional, .mp3 o .m4a). El visitante podrá silenciarlo.</label>
+       <input type="file" data-el="${i}" data-f="audioSrc" accept="audio/*,.mp3,.m4a,.ogg"><small>${esc(el.audioSrc) || 'Sin archivo'}</small>`;
   return `<div class="el"><div class="elh"><b>Elemento ${i+1}</b>
     <select data-type="${i}">${Object.entries(TYPES).map(([k,v]) => `<option value="${k}" ${el.type===k?'selected':''}>${v}</option>`).join('')}</select>
     <span><button data-up="${i}">↑</button><button data-down="${i}">↓</button><button data-del="${i}">✕</button></span></div>${body}</div>`;
@@ -105,7 +113,7 @@ function render() {
     try {
       const fd = new FormData(); fd.append('file', inp.files[0]);
       const { url } = await api('/api/upload', { method:'POST', body: fd });
-      if (inp.dataset.k) cur[inp.dataset.k] = url; else cur.elements[+inp.dataset.el].src = url;
+      if (inp.dataset.k) cur[inp.dataset.k] = url; else cur.elements[+inp.dataset.el][inp.dataset.f || 'src'] = url;
       render(); status('Archivo subido. Falta guardar.');
     } catch (e) { status('Error: ' + e.message); }
   });
