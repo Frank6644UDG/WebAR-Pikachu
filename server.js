@@ -3,6 +3,8 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const qrcode = require('qrcode-generator');
+const { buildStencil } = require('./stencil');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -92,6 +94,20 @@ app.delete('/api/experiences/:id', auth, (req, res) => {
 app.post('/api/upload', auth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).send('Archivo no permitido');
   res.json({ url: '/uploads/' + req.file.filename });
+});
+
+// QR en SVG apto para plantilla (stencil), solo para el editor
+app.get('/api/qr.svg', auth, (req, res) => {
+  const url = String(req.query.url || '');
+  if (!/^https?:\/\//i.test(url) || url.length > 300) return res.status(400).send('URL no válida');
+  const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || d));
+  const ecc = ['M', 'Q', 'H'].includes(req.query.ecc) ? req.query.ecc : 'H';
+  const qr = qrcode(0, ecc); qr.addData(url); qr.make();
+  const n = qr.getModuleCount();
+  const r = buildStencil((row, col) => qr.isDark(row, col), n,
+    { sizeCm: num(req.query.size, 40, 5, 300), bridge: num(req.query.bridge, 0.3, 0.15, 0.5) });
+  res.set({ 'X-QR-Modules': String(n), 'X-QR-Bridges': String(r.bridges), 'X-QR-Connected': String(r.connected) });
+  res.type('image/svg+xml').send(r.svg);
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
