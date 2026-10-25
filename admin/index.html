@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor de experiencias</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:#f4f5f7;color:#1b1e26;display:flex;min-height:100vh}
+  aside{width:260px;background:#1b1e26;color:#fff;padding:16px}
+  aside h2{margin:0 0 12px;font-size:1rem}
+  aside button{width:100%;text-align:left;margin-bottom:6px;padding:10px;border:0;border-radius:8px;background:#2a2f3b;color:#fff;cursor:pointer}
+  aside button.on{background:#ff4d6d}
+  main{flex:1;padding:24px;max-width:760px}
+  fieldset{border:1px solid #d8dbe2;border-radius:12px;background:#fff;margin:0 0 16px;padding:16px}
+  legend{font-weight:700;padding:0 6px}
+  label{display:block;margin:10px 0 4px;font-size:.85rem;font-weight:600}
+  input[type=text],input[type=number],textarea{width:100%;padding:9px;border:1px solid #c9ced8;border-radius:8px;font:inherit}
+  textarea{min-height:140px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .tabs button{padding:6px 12px;border:1px solid #c9ced8;background:#fff;border-radius:8px;cursor:pointer;margin-right:4px}
+  .tabs button.on{background:#1b1e26;color:#fff}
+  .primary{background:#ff4d6d;color:#fff;border:0;padding:12px 22px;border-radius:10px;font-weight:700;cursor:pointer}
+  .danger{background:#fff;color:#c0243f;border:1px solid #c0243f;padding:12px 18px;border-radius:10px;cursor:pointer;margin-left:8px}
+  small{color:#6b7280;display:block;margin-top:4px;word-break:break-all}
+  #status{margin-left:12px;font-weight:600}
+  a{color:#ff4d6d}
+  @media(max-width:720px){body{flex-direction:column}aside{width:100%}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<aside>
+  <h2>Experiencias</h2>
+  <div id="list"></div>
+  <button id="btnNew">＋ Nueva experiencia</button>
+</aside>
+<main id="main"></main>
+
+<script>
+const LANGS = { es:'Español', en:'English', ja:'日本語', zh:'中文', ko:'한국어' };
+const $ = (s) => document.querySelector(s);
+let all = [], cur = null, tab = 'es';
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function refresh(selectId) {
+  all = await api('/api/experiences');
+  cur = all.find(e => e.id === selectId) || (cur && all.find(e => e.id === cur.id)) || all[0] || null;
+  render();
+}
+function blank() {
+  return { name:'Nueva experiencia', targetSrc:'', silhouetteSrc:'', videoSrc:'', videoScale:1, offsetX:0, offsetY:0, texts:{} };
+}
+const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+function render() {
+  $('#list').innerHTML = all.map(e => `<button class="${cur && cur.id===e.id?'on':''}" data-id="${e.id}">${esc(e.name)}</button>`).join('');
+  document.querySelectorAll('#list button').forEach(b => b.onclick = () => { cur = all.find(e => e.id === b.dataset.id); render(); });
+  if (!cur) { $('#main').innerHTML = '<p>Crea tu primera experiencia con el botón de la izquierda.</p>'; return; }
+  const tx = cur.texts[tab] || (cur.texts[tab] = { title:'', body:'' });
+  const link = cur.id ? `${location.origin}/?e=${cur.id}` : '';
+  $('#main').innerHTML = `
+    <h1>Editor</h1>
+    ${link ? `<p>Enlace público: <a href="${link}" target="_blank">${link}</a></p>` : '<p>Guarda para obtener el enlace público.</p>'}
+    <fieldset><legend>General</legend>
+      <label>Nombre (solo para ti)</label>
+      <input type="text" id="f_name" value="${esc(cur.name)}">
+    </fieldset>
+    <fieldset><legend>Archivos</legend>
+      ${fileField('targetSrc','Imagen objetivo compilada (.mind)','.mind')}
+      ${fileField('videoSrc','Video (.mp4)','video/mp4,video/webm')}
+      ${fileField('silhouetteSrc','Silueta guía (PNG con fondo transparente)','image/png,image/webp,image/jpeg')}
+    </fieldset>
+    <fieldset><legend>Posición del video sobre el objetivo</legend>
+      <div class="grid">
+        <div><label>Tamaño (1 = ancho del objetivo)</label><input type="number" step="0.1" id="f_scale" value="${cur.videoScale}"></div>
+        <div><label>Mover horizontal</label><input type="number" step="0.1" id="f_x" value="${cur.offsetX}"></div>
+        <div><label>Mover vertical</label><input type="number" step="0.1" id="f_y" value="${cur.offsetY}"></div>
+      </div>
+    </fieldset>
+    <fieldset><legend>Textos finales</legend>
+      <div class="tabs">${Object.entries(LANGS).map(([k,v]) => `<button data-t="${k}" class="${k===tab?'on':''}">${v}</button>`).join('')}</div>
+      <label>Título</label><input type="text" id="f_title" value="${esc(tx.title)}">
+      <label>Texto</label><textarea id="f_body">${esc(tx.body)}</textarea>
+    </fieldset>
+    <button class="primary" id="btnSave">Guardar</button>
+    ${cur.id ? '<button class="danger" id="btnDel">Eliminar</button>' : ''}
+    <span id="status"></span>`;
+
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { sync(); tab = b.dataset.t; render(); });
+  document.querySelectorAll('input[type=file]').forEach(inp => inp.onchange = async () => {
+    if (!inp.files[0]) return;
+    sync(); status('Subiendo…');
+    try {
+      const fd = new FormData(); fd.append('file', inp.files[0]);
+      const r = await api('/api/upload', { method:'POST', body: fd });
+      cur[inp.dataset.k] = r.url; render(); status('Archivo subido. Falta guardar.');
+    } catch (e) { status('Error: ' + e.message); }
+  });
+  $('#btnSave').onclick = save;
+  if ($('#btnDel')) $('#btnDel').onclick = async () => {
+    if (!confirm('¿Eliminar esta experiencia?')) return;
+    await api('/api/experiences/' + cur.id, { method:'DELETE' }); cur = null; refresh();
+  };
+}
+function fileField(k, label, accept) {
+  return `<label>${label}</label><input type="file" data-k="${k}" accept="${accept}"><small>${esc(cur[k]) || 'Sin archivo'}</small>`;
+}
+function sync() {
+  if (!$('#f_name')) return;
+  cur.name = $('#f_name').value;
+  cur.videoScale = parseFloat($('#f_scale').value) || 1;
+  cur.offsetX = parseFloat($('#f_x').value) || 0;
+  cur.offsetY = parseFloat($('#f_y').value) || 0;
+  cur.texts[tab] = { title: $('#f_title').value, body: $('#f_body').value };
+}
+function status(m) { if ($('#status')) $('#status').textContent = m; }
+async function save() {
+  sync(); status('Guardando…');
+  try {
+    const saved = cur.id
+      ? await api('/api/experiences/' + cur.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cur) })
+      : await api('/api/experiences', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cur) });
+    await refresh(saved.id); status('✓ Guardado');
+  } catch (e) { status('Error: ' + e.message); }
+}
+$('#btnNew').onclick = () => { cur = blank(); tab = 'es'; render(); };
+refresh();
+</script>
+</body>
+</html>
