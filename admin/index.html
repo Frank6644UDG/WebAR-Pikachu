@@ -7,28 +7,51 @@
 <style>
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,sans-serif;background:#f4f5f7;color:#1b1e26;display:flex;min-height:100vh}
-  aside{width:260px;background:#1b1e26;color:#fff;padding:16px}
+  aside{width:240px;background:#1b1e26;color:#fff;padding:16px;flex-shrink:0}
   aside h2{margin:0 0 12px;font-size:1rem}
   aside button{width:100%;text-align:left;margin-bottom:6px;padding:10px;border:0;border-radius:8px;background:#2a2f3b;color:#fff;cursor:pointer}
   aside button.on{background:#ff4d6d}
-  main{flex:1;padding:24px;max-width:760px}
+  main{flex:1;padding:24px;min-width:0}
   fieldset{border:1px solid #d8dbe2;border-radius:12px;background:#fff;margin:0 0 16px;padding:16px}
   legend{font-weight:700;padding:0 6px}
   label{display:block;margin:10px 0 4px;font-size:.85rem;font-weight:600}
-  input[type=text],textarea,select{width:100%;padding:9px;border:1px solid #c9ced8;border-radius:8px;font:inherit}
+  input[type=text],input[type=number],textarea,select{width:100%;padding:9px;border:1px solid #c9ced8;border-radius:8px;font:inherit}
   textarea{min-height:110px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
   .el{border:1px solid #d8dbe2;border-left:5px solid #ff4d6d;border-radius:10px;padding:12px;margin:12px 0;background:#fafbfc}
   .elh{display:flex;gap:10px;align-items:center;justify-content:space-between}
   .elh select{width:auto}
-  .elh button,.tabs button,.add button{padding:6px 12px;border:1px solid #c9ced8;background:#fff;border-radius:8px;cursor:pointer;margin-left:4px}
-  .tabs button.on{background:#1b1e26;color:#fff}
+  .elh button,.tabs button,.add button,#pvChips button{padding:6px 12px;border:1px solid #c9ced8;background:#fff;border-radius:8px;cursor:pointer;margin-left:4px}
+  .tabs button.on,#pvChips button.on{background:#1b1e26;color:#fff}
   .add{margin-top:8px}.add button{margin:0 6px 0 0}
   .primary{background:#ff4d6d;color:#fff;border:0;padding:12px 22px;border-radius:10px;font-weight:700;cursor:pointer}
   .danger{background:#fff;color:#c0243f;border:1px solid #c0243f;padding:12px 18px;border-radius:10px;cursor:pointer;margin-left:8px}
   small{color:#6b7280;display:block;margin-top:4px;word-break:break-all}
   #status{margin-left:12px;font-weight:600}
   a{color:#ff4d6d}
-  @media(max-width:720px){body{flex-direction:column}aside{width:100%}}
+  .qrbox{background:#fff;border:1px dashed #c9ced8;border-radius:10px;padding:14px;margin-top:12px;text-align:center}
+  .qrbox svg{width:100%;max-width:280px;height:auto}
+  /* Vista previa en teléfono (pantalla real de 360x720 reducida al 60 %) */
+  #phoneCol{width:290px;padding:24px 12px;position:sticky;top:0;align-self:flex-start;flex-shrink:0}
+  #phoneCol h3{margin:0 0 8px;text-align:center}
+  #pvChips{text-align:center;margin-bottom:10px}
+  .phoneWrap{padding:10px;background:#111;border-radius:36px;width:236px;margin:0 auto}
+  .phone{width:216px;height:432px;overflow:hidden;border-radius:26px;position:relative;background:#333}
+  .pvscreen{width:360px;height:720px;transform:scale(.6);transform-origin:0 0;position:relative;color:#fff;
+    font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;background:linear-gradient(#4a4f5c,#2b2e37)}
+  .pvimg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .pvlabel{position:absolute;top:50%;left:0;right:0;text-align:center;opacity:.7}
+  .pvpanel{position:absolute;left:12px;right:12px;bottom:14px;background:#000c;border-radius:18px;padding:16px}
+  .pvpanel h2{margin:0 0 8px;font-size:1.1rem}
+  .pvbody{max-height:187px;overflow:hidden;line-height:1.5;white-space:pre-line;font-size:16px}
+  .pvrow{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
+  .pvb{padding:10px 16px;border-radius:14px;background:#ff4d6d;font-size:14.4px;font-weight:600}
+  .pvb.g{background:transparent;border:1.5px solid #fff6}
+  .pvfloat{position:absolute;left:50%;transform:translateX(-50%);bottom:24px}
+  .pvsound{position:absolute;top:12px;left:12px;background:#000a;border:1.5px solid #fff6}
+  .pvaim{position:absolute;left:0;right:0;top:62%;text-align:center}
+  .pvaim span{background:#000a;padding:8px 14px;border-radius:999px}
+  @media(max-width:900px){body{flex-direction:column}aside{width:100%}#phoneCol{position:static;width:100%}}
 </style>
 </head>
 <body>
@@ -38,12 +61,26 @@
   <button id="btnNew">＋ Nueva experiencia</button>
 </aside>
 <main id="main"></main>
+<div id="phoneCol">
+  <h3>Vista previa</h3>
+  <div id="pvChips"></div>
+  <div class="phoneWrap"><div class="phone"><div class="pvscreen" id="pvScreen"></div></div></div>
+  <small style="text-align:center">Así se ve en un teléfono, con el idioma de la pestaña elegida. Toca un elemento para verlo.</small>
+</div>
+
 <script>
 const LANGS = { es:'Español', en:'English', ja:'日本語', zh:'中文', ko:'한국어' };
 const TYPES = { video:'Video', image:'Imagen / animación WebP', text:'Texto' };
+const PV = {
+  es:{more:'Leer más',next:'Siguiente',close:'Cerrar',aim:'Enfoca la silueta',mute:'Silenciar'},
+  en:{more:'Read more',next:'Next',close:'Close',aim:'Aim at the outline',mute:'Mute'},
+  ja:{more:'続きを読む',next:'次へ',close:'閉じる',aim:'シルエットに合わせてください',mute:'ミュート'},
+  zh:{more:'阅读更多',next:'下一步',close:'关闭',aim:'请对准轮廓',mute:'静音'},
+  ko:{more:'더 보기',next:'다음',close:'닫기',aim:'실루엣에 맞춰 주세요',mute:'음소거'}
+};
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-let all = [], cur = null, tab = 'es';
+let all = [], cur = null, tab = 'es', pv = 0, qrLast = null;
 
 async function api(url, opts) {
   const r = await fetch(url, opts);
@@ -63,26 +100,34 @@ function fileField(k, label, accept) {
 }
 function elHtml(el, i) {
   const tx = (el.texts && el.texts[tab]) || { title:'', body:'' };
+  const fi = (f, acc) => `<input type="file" data-el="${i}" data-f="${f}" accept="${acc}"><small>${esc(el[f]) || 'Sin archivo'}</small>`;
   const body = el.type === 'text'
     ? `<label>Título (${LANGS[tab]})</label><input type="text" data-ti="${i}" value="${esc(tx.title)}">
        <label>Texto (${LANGS[tab]})</label><textarea data-tb="${i}">${esc(tx.body)}</textarea>`
     : el.type === 'video'
-      ? `<label>Video principal (.mov con transparencia para iPhone, o .mp4)</label>
-         <input type="file" data-el="${i}" data-f="src" accept=".mov,video/quicktime,video/mp4,video/webm"><small>${esc(el.src) || 'Sin archivo'}</small>
-         <label>Video alternativo (.webm con transparencia para Android y Chrome) - opcional</label>
-         <input type="file" data-el="${i}" data-f="srcAlt" accept=".webm,video/webm"><small>${esc(el.srcAlt) || 'Sin archivo'}</small>`
-      : `<label>Imagen o animación (.webp animado, .png, .jpg, .gif)</label>
-       <input type="file" data-el="${i}" data-f="src" accept="image/*"><small>${esc(el.src) || 'Sin archivo'}</small>
-       <label>Audio (opcional, .mp3 o .m4a). El visitante podrá silenciarlo.</label>
-       <input type="file" data-el="${i}" data-f="audioSrc" accept="audio/*,.mp3,.m4a,.ogg"><small>${esc(el.audioSrc) || 'Sin archivo'}</small>`;
+      ? `<label>Video principal (.mov con transparencia para iPhone, o .mp4)</label>${fi('src','.mov,video/quicktime,video/mp4,video/webm')}
+         <label>Video alternativo (.webm con transparencia para Android y Chrome) - opcional</label>${fi('srcAlt','.webm,video/webm')}`
+      : `<label>Imagen o animación (.webp animado, .png, .jpg, .gif)</label>${fi('src','image/*')}
+         <label>Audio (opcional, .mp3 o .m4a). El visitante podrá silenciarlo.</label>${fi('audioSrc','audio/*,.mp3,.m4a,.ogg')}`;
   return `<div class="el"><div class="elh"><b>Elemento ${i+1}</b>
     <select data-type="${i}">${Object.entries(TYPES).map(([k,v]) => `<option value="${k}" ${el.type===k?'selected':''}>${v}</option>`).join('')}</select>
     <span><button data-up="${i}">↑</button><button data-down="${i}">↓</button><button data-del="${i}">✕</button></span></div>${body}</div>`;
 }
+function qrHtml() {
+  if (!cur.id) return '<fieldset><legend>Código QR para plantilla (stencil)</legend><p>Guarda la experiencia para poder generar su QR.</p></fieldset>';
+  return `<fieldset><legend>Código QR para plantilla (stencil)</legend>
+    <small>QR del enlace público, con puentes para que la plantilla no se desarme al cortarla. Es la zona de pintura: los cuadros negros son huecos.</small>
+    <div class="grid">
+      <div><label>Tamaño del QR (cm)</label><input type="number" id="q_size" value="40" min="5" max="300"></div>
+      <div><label>Ancho de puentes (% del módulo)</label><input type="number" id="q_bridge" value="30" min="15" max="50"></div>
+      <div><label>Corrección de errores</label><select id="q_ecc"><option value="H">Alta (H) - recomendada</option><option value="Q">Media-alta (Q) - QR más simple</option></select></div>
+    </div>
+    <p><button class="primary" id="btnQR">Generar QR</button></p><div id="qrOut"></div></fieldset>`;
+}
 function render() {
   $('#list').innerHTML = all.map(e => `<button class="${cur && cur.id===e.id?'on':''}" data-id="${e.id}">${esc(e.name)}</button>`).join('');
-  document.querySelectorAll('#list button').forEach(b => b.onclick = () => { cur = all.find(e => e.id === b.dataset.id); render(); });
-  if (!cur) { $('#main').innerHTML = '<p>Crea tu primera experiencia con el botón de la izquierda.</p>'; return; }
+  document.querySelectorAll('#list button').forEach(b => b.onclick = () => { cur = all.find(e => e.id === b.dataset.id); pv = 0; render(); });
+  if (!cur) { $('#main').innerHTML = '<p>Crea tu primera experiencia con el botón de la izquierda.</p>'; $('#pvScreen').innerHTML = ''; return; }
   const link = cur.id ? `${location.origin}/?e=${cur.id}` : '';
   $('#main').innerHTML = `
     <h1>Editor</h1>
@@ -95,18 +140,24 @@ function render() {
     <fieldset><legend>Elementos (se muestran a pantalla completa, en orden)</legend>
       <div class="tabs">Idioma de los textos: ${Object.entries(LANGS).map(([k,v]) => `<button data-t="${k}" class="${k===tab?'on':''}">${v}</button>`).join('')}</div>
       ${cur.elements.map(elHtml).join('') || '<p>Aún no hay elementos.</p>'}
-      <div class="add"><button data-add="video">＋ Video</button><button data-add="image">＋ Imagen</button><button data-add="text">＋ Texto</button></div>
+      <div class="add"><button data-add="video">＋ Video</button><button data-add="image">＋ Imagen / animación</button><button data-add="text">＋ Texto</button></div>
     </fieldset>
     <button class="primary" id="btnSave">Guardar</button>
-    ${cur.id ? '<button class="danger" id="btnDel">Eliminar</button>' : ''}<span id="status"></span>`;
+    ${cur.id ? '<button class="danger" id="btnDel">Eliminar</button>' : ''}<span id="status"></span>
+    <div style="height:20px"></div>${qrHtml()}`;
 
-  const on = (sel, fn) => document.querySelectorAll(sel).forEach(n => n.onclick = () => { sync(); fn(n); render(); });
+  const on = (sel, fn) => document.querySelectorAll(sel).forEach(n => n.onclick = (ev) => { ev.stopPropagation(); sync(); fn(n); render(); });
   on('.tabs button', n => tab = n.dataset.t);
-  on('[data-add]', n => cur.elements.push({ type:n.dataset.add, src:'', texts:{} }));
+  on('[data-add]', n => { cur.elements.push({ type:n.dataset.add, src:'', texts:{} }); pv = cur.elements.length - 1; });
   on('[data-del]', n => cur.elements.splice(+n.dataset.del, 1));
-  on('[data-up]', n => { const i=+n.dataset.up; if (i>0) [cur.elements[i-1],cur.elements[i]]=[cur.elements[i],cur.elements[i-1]]; });
-  on('[data-down]', n => { const i=+n.dataset.down, e=cur.elements; if (i<e.length-1) [e[i+1],e[i]]=[e[i],e[i+1]]; });
+  on('[data-up]', n => { const i=+n.dataset.up; if (i>0) { [cur.elements[i-1],cur.elements[i]]=[cur.elements[i],cur.elements[i-1]]; pv=i-1; } });
+  on('[data-down]', n => { const i=+n.dataset.down, e=cur.elements; if (i<e.length-1) { [e[i+1],e[i]]=[e[i],e[i+1]]; pv=i+1; } });
   document.querySelectorAll('[data-type]').forEach(s => s.onchange = () => { sync(); cur.elements[+s.dataset.type].type = s.value; render(); });
+  document.querySelectorAll('.el').forEach((d, i) => d.addEventListener('click', () => { pv = i; renderPreview(); }));
+  document.querySelectorAll('[data-ti],[data-tb]').forEach(inp => {
+    inp.oninput = () => { sync(); renderPreview(); };
+    inp.onfocus = () => { pv = +(inp.dataset.ti ?? inp.dataset.tb); renderPreview(); };
+  });
   document.querySelectorAll('input[type=file]').forEach(inp => inp.onchange = async () => {
     if (!inp.files[0]) return;
     sync(); status('Subiendo…');
@@ -122,7 +173,68 @@ function render() {
     if (!confirm('¿Eliminar esta experiencia?')) return;
     await api('/api/experiences/' + cur.id, { method:'DELETE' }); cur = null; refresh();
   };
+  if ($('#btnQR')) $('#btnQR').onclick = genQR;
+  if (qrLast && qrLast.id === cur.id && $('#qrOut')) $('#qrOut').innerHTML = qrLast.html;
+  renderPreview();
 }
+
+// ---- Vista previa en teléfono
+function media(el) {
+  if (!el) return '';
+  if (el.type === 'image') return el.src ? `<img class="pvimg" src="${esc(el.src)}" alt="">` : '<div class="pvlabel">Imagen</div>';
+  if (el.type === 'video') {
+    const vs = [el.srcAlt, el.src].find(u => u && !/\.mov$/i.test(u));
+    return (vs ? `<video class="pvimg" src="${esc(vs)}" muted playsinline preload="metadata"></video>` : '') + '<div class="pvlabel">▶ Video</div>';
+  }
+  return '';
+}
+function renderPreview() {
+  const sc = $('#pvScreen'); if (!sc || !cur) return;
+  const L = PV[tab] || PV.en, els = cur.elements;
+  if (pv >= els.length) pv = els.length - 1;
+  $('#pvChips').innerHTML = [['-1','Silueta'], ...els.map((e,i) => [String(i), String(i+1)])]
+    .map(([v,l]) => `<button data-pv="${v}" class="${+v===pv?'on':''}">${l}</button>`).join('');
+  document.querySelectorAll('#pvChips button').forEach(b => b.onclick = () => { pv = +b.dataset.pv; renderPreview(); });
+  let h = '';
+  if (pv < 0) {
+    h = (cur.silhouetteSrc ? `<img src="${esc(cur.silhouetteSrc)}" alt="" style="position:absolute;left:15%;top:18%;width:70%;height:42%;object-fit:contain;filter:drop-shadow(0 0 6px #fff)">` : '')
+      + `<div class="pvaim"><span>${L.aim}</span></div>`;
+  } else {
+    const el = els[pv], last = pv === els.length - 1;
+    if (el.type === 'text') {
+      let j = pv - 1; while (j >= 0 && els[j].type === 'text') j--;
+      const tx = (el.texts && el.texts[tab]) || {};
+      h = (j >= 0 ? media(els[j]) : '') + `<div class="pvpanel"><h2>${esc(tx.title)}</h2><div class="pvbody">${esc(tx.body) || '(vacío: este elemento se omite)'}</div>
+        <div class="pvrow"><span class="pvb pvmore">${L.more}</span>${last ? '' : `<span class="pvb">${L.next}</span>`}<span class="pvb g">${L.close}</span></div></div>`;
+    } else {
+      h = media(el);
+      if (el.type === 'image') h += `<span class="pvb pvfloat">${last ? L.close : L.next}</span>` + (el.audioSrc ? `<span class="pvb pvsound">🔇 ${L.mute}</span>` : '');
+    }
+  }
+  sc.innerHTML = h;
+  const b = sc.querySelector('.pvbody'), m = sc.querySelector('.pvmore');
+  if (b && m) m.style.display = b.scrollHeight > b.clientHeight + 1 ? '' : 'none';
+}
+
+// ---- QR para plantilla
+async function genQR() {
+  const out = $('#qrOut'); out.textContent = 'Generando…';
+  const size = +$('#q_size').value || 40, bridge = (+$('#q_bridge').value || 30) / 100, ecc = $('#q_ecc').value;
+  const url = `${location.origin}/?e=${cur.id}`;
+  try {
+    const r = await fetch(`/api/qr.svg?url=${encodeURIComponent(url)}&size=${size}&bridge=${bridge}&ecc=${ecc}`);
+    if (!r.ok) throw new Error(await r.text());
+    const svg = await r.text(), n = +r.headers.get('X-QR-Modules'), br = r.headers.get('X-QR-Bridges');
+    const ok = r.headers.get('X-QR-Connected') === 'true';
+    const blobUrl = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' }));
+    const html = `<div class="qrbox">${svg}</div>
+      <p>${n}×${n} módulos · cada módulo mide <b>${(size/n).toFixed(2)} cm</b> · ${br} puentes de <b>${((size/n)*bridge*10).toFixed(1)} mm</b> ·
+      ${ok ? '✓ todas las piezas de la plantilla quedan unidas' : '⚠ revisa: hay piezas sueltas'}</p>
+      <p><a href="${blobUrl}" download="qr-${cur.id}.svg"><b>Descargar SVG</b></a><br><small>El trazado "corte" es la línea de corte (los huecos). Enlace codificado: ${esc(url)}</small></p>`;
+    qrLast = { id: cur.id, html }; out.innerHTML = html;
+  } catch (e) { out.textContent = 'Error: ' + e.message; }
+}
+
 function sync() {
   if (!$('#f_name')) return;
   cur.name = $('#f_name').value;
@@ -140,7 +252,7 @@ async function save() {
     await refresh(saved.id); status('✓ Guardado');
   } catch (e) { status('Error: ' + e.message); }
 }
-$('#btnNew').onclick = () => { cur = blank(); tab = 'es'; render(); };
+$('#btnNew').onclick = () => { cur = blank(); tab = 'es'; pv = 0; render(); };
 refresh();
 </script>
 </body>
