@@ -29,7 +29,7 @@
     document.body.classList.toggle('ar', id === 'screenAR');
   }
   function getText() {
-    const tx = (exp && exp.texts) || {};
+    const tx = (curEl && curEl.texts) || {};
     const pick = tx[lang] || tx.en || Object.values(tx)[0] || {};
     return { title: pick.title || '', body: pick.body || '' };
   }
@@ -71,14 +71,22 @@
     show('screenSticky');
   }
 
-  // 4 a 7: experiencia de RA
+  // ---- Experiencia: el objetivo solo sirve de disparador; los elementos van a pantalla completa
+  const NEXT = { es: 'Siguiente', en: 'Next', ja: '次へ', zh: '下一步', ko: '다음' };
+  Object.keys(NEXT).forEach((k) => (UI[k].next = NEXT[k]));
+  let curEl = null, idx = -1, started = false;
+  const vid = document.createElement('video');
+  vid.playsInline = true; vid.setAttribute('webkit-playsinline', '');
+  const hide = (list) => list.forEach((s) => $(s).classList.add('hidden'));
+
   function startAR() {
     show('screenAR');
+    idx = -1; started = false;
     $('#silImg').src = exp.silhouetteSrc || '';
     $('#silImg').style.display = exp.silhouetteSrc ? '' : 'none';
+    hide(['#textPanel', '#modal', '#stage', '#btnNextF']);
+    $('#stage').innerHTML = '';
     $('#silhouette').classList.remove('hidden');
-    $('#textPanel').classList.add('hidden');
-    $('#modal').classList.add('hidden');
     $('#loading').classList.remove('hidden');
     $('#loading').textContent = t('loading');
 
@@ -87,84 +95,72 @@
       <a-scene mindar-image="imageTargetSrc: ${exp.targetSrc}; uiLoading: no; uiScanning: no; uiError: no; missTolerance: 5; warmupTolerance: 3"
                color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights"
                vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false" embedded>
-        <a-assets>
-          <video id="vid" src="${exp.videoSrc || ''}" preload="auto" playsinline webkit-playsinline crossorigin="anonymous"></video>
-        </a-assets>
         <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-        <a-entity id="target" mindar-image-target="targetIndex: 0">
-          <a-video id="vplane" src="#vid" width="${exp.videoScale || 1}" height="${(exp.videoScale || 1) * 0.5625}"
-                   position="${exp.offsetX || 0} ${exp.offsetY || 0} 0.01"></a-video>
-        </a-entity>
+        <a-entity id="target" mindar-image-target="targetIndex: 0"></a-entity>
       </a-scene>`;
-
     const scene = holder.querySelector('a-scene');
-    const video = holder.querySelector('#vid');
     const target = holder.querySelector('#target');
-    const vplane = holder.querySelector('#vplane');
-    let started = false, lost = true;
-
-    // "Desbloquea" el video con el toque del usuario (necesario en iPhone)
-    video.play().then(() => video.pause()).catch(() => {});
-    video.addEventListener('loadedmetadata', () => {
-      const s = exp.videoScale || 1;
-      vplane.setAttribute('width', s);
-      vplane.setAttribute('height', s * (video.videoHeight / video.videoWidth));
-    });
-    video.addEventListener('ended', showText);
     scene.addEventListener('arReady', () => $('#loading').classList.add('hidden'));
     scene.addEventListener('arError', () => { $('#loading').textContent = t('notReady'); });
-
     target.addEventListener('targetFound', () => {
-      lost = false;
       $('#silhouette').classList.add('hidden');
-      if (!started) {
-        started = true;
-        if (exp.videoSrc) {
-          video.currentTime = 0;
-          video.muted = false;
-          video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
-        } else showText();
-      } else if (video.paused && !video.ended) video.play().catch(() => {});
+      if (!started) { started = true; next(); }
     });
-
-    target.addEventListener('targetLost', () => {
-      lost = true;
-      if (!sticky) {
-        // no sticky: la experiencia desaparece y se reinicia
-        video.pause(); video.currentTime = 0; started = false;
-        $('#textPanel').classList.add('hidden');
-        $('#silhouette').classList.remove('hidden');
-      }
-    });
-
-    // sticky: mantiene el contenido en su última posición
-    cancelAnimationFrame(raf);
-    const keep = () => {
-      if (sticky && started && lost && target.object3D) target.object3D.visible = true;
-      raf = requestAnimationFrame(keep);
-    };
-    keep();
+    target.addEventListener('targetLost', () => { if (!sticky && started) resetExp(); });
   }
 
-  // 6: texto con "leer más" si no cabe
-  function showText() {
+  function next() {
+    const els = exp.elements || [];
+    idx++;
+    if (idx >= els.length) return closeAR();
+    curEl = els[idx];
+    const last = idx === els.length - 1;
+    const stage = $('#stage');
+    hide(['#textPanel', '#btnNextF']);
+    if (curEl.type === 'text') { stage.classList.remove('hidden'); return showText(last); }
+    vid.pause(); vid.onended = null;
+    stage.classList.remove('hidden');
+    if (curEl.type === 'video') {
+      stage.innerHTML = ''; stage.appendChild(vid);
+      vid.src = curEl.src; vid.muted = false;
+      vid.onended = next;
+      vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}); });
+    } else {
+      stage.innerHTML = `<img src="${curEl.src}" alt="">`;
+      $('#btnNextF').textContent = last ? t('close') : t('next');
+      $('#btnNextF').classList.remove('hidden');
+    }
+  }
+
+  function showText(last) {
     const x = getText();
-    if (!x.title && !x.body) return;
+    if (!x.title && !x.body) return next();
     $('#textTitle').textContent = x.title;
     $('#textBody').textContent = x.body;
+    $('#btnNextP').textContent = t('next');
+    $('#btnNextP').classList.toggle('hidden', last);
     $('#textPanel').classList.remove('hidden');
     const b = $('#textBody');
     $('#btnMore').classList.toggle('hidden', !(b.scrollHeight > b.clientHeight + 1));
   }
 
-  // 7: cerrar
+  function resetExp() {
+    vid.pause(); vid.onended = null; started = false; idx = -1;
+    hide(['#textPanel', '#stage', '#btnNextF', '#modal']);
+    $('#stage').innerHTML = '';
+    $('#silhouette').classList.remove('hidden');
+  }
+
   function closeAR() {
-    cancelAnimationFrame(raf);
+    vid.pause(); vid.onended = null;
     const scene = document.querySelector('a-scene');
     try { scene.systems['mindar-image-system'].stop(); } catch (e) {}
     $('#sceneHolder').innerHTML = '';
+    $('#stage').innerHTML = '';
     show('screenEnd');
   }
 
+  $('#btnNextP').onclick = next;
+  $('#btnNextF').onclick = next;
   init();
 })();
