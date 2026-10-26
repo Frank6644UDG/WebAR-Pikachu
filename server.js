@@ -54,11 +54,18 @@ function normalize(e) {
   }
   return e;
 }
+const cleanLayer = (l = {}) => ({
+  start: Math.max(0, Number(l.start) || 0),
+  duration: Math.max(0, Number(l.duration) || 0),
+  texts: typeof l.texts === 'object' && l.texts ? l.texts : {}
+});
 const cleanEl = (x = {}) => ({
   type: ['video', 'image', 'text'].includes(x.type) ? x.type : 'text',
   src: String(x.src || ''),
   srcAlt: String(x.srcAlt || ''),
   audioSrc: String(x.audioSrc || ''),
+  duration: Math.max(0, Number(x.duration) || 0),
+  layers: (Array.isArray(x.layers) ? x.layers : []).slice(0, 20).map(cleanLayer),
   texts: typeof x.texts === 'object' && x.texts ? x.texts : {}
 });
 const clean = (b = {}) => ({
