@@ -29,7 +29,7 @@
     document.body.classList.toggle('ar', id === 'screenAR');
   }
   function getText() {
-    const tx = (curEl && curEl.texts) || {};
+    const tx = (txSrc && txSrc.texts) || {};
     const pick = tx[lang] || tx.en || Object.values(tx)[0] || {};
     return { title: pick.title || '', body: pick.body || '' };
   }
@@ -48,13 +48,8 @@
     $('#btnRestart').onclick = startAR;
     $('#btnX').onclick = closeAR;
     $('#btnClose').onclick = closeAR;
-    $('#btnMore').onclick = () => {
-      const x = getText();
-      $('#modalTitle').textContent = x.title;
-      $('#modalBody').textContent = x.body;
-      $('#modal').classList.remove('hidden');
-    };
-    $('#btnModalClose').onclick = () => $('#modal').classList.add('hidden');
+    $('#btnMore').onclick = openMore;
+    $('#btnModalClose').onclick = closeMore;
   }
 
   // 1 y 2: permiso de cámara + detección de idioma
@@ -71,12 +66,15 @@
     show('screenSticky');
   }
 
-  // ---- Experiencia: el objetivo solo sirve de disparador; los elementos van a pantalla completa
+  // ---- Experiencia: escenas con capas de texto programadas por segundos.
+  // El objetivo solo dispara; todo se muestra a pantalla completa.
   const NEXT = { es: 'Siguiente', en: 'Next', ja: '次へ', zh: '下一步', ko: '다음' };
   Object.keys(NEXT).forEach((k) => (UI[k].next = NEXT[k]));
-  let curEl = null, idx = -1, started = false;
+  let curEl = null, txSrc = null, idx = -1, started = false;
+  let sceneT = 0, lastTs = 0, paused = false, vEnded = false, mediaReady = false, shown = -2;
   const vid = document.createElement('video');
   vid.playsInline = true; vid.setAttribute('webkit-playsinline', '');
+  const warm = document.createElement('video'); warm.preload = 'auto'; warm.muted = true;
   const hide = (list) => list.forEach((s) => $(s).classList.add('hidden'));
 
   // Audio separado, con botón para silenciarlo
@@ -88,15 +86,31 @@
     $('#btnSound').textContent = aud.paused ? '🔊 ' + s[1] : '🔇 ' + s[0];
   };
   ['play', 'pause', 'ended'].forEach((e) => aud.addEventListener(e, soundLabel));
-  const unlockAudio = () => { aud.src = SILENT; aud.play().catch(() => {}); };  // se llama con un toque del usuario (iPhone)
+  const unlockAudio = () => { aud.src = SILENT; aud.play().catch(() => {}); };
   const stopAudio = () => { aud.pause(); aud.removeAttribute('src'); $('#btnSound').classList.add('hidden'); };
+
+  // iPhone/Safari reproduce .mov con transparencia; Chrome/Android usan .webm
+  function pickSrc(el) {
+    const apple = /iP(hone|ad|od)/.test(navigator.userAgent) || /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const mov = [el.src, el.srcAlt].find((u) => /\.mov$/i.test(u || ''));
+    const webm = [el.src, el.srcAlt].find((u) => /\.webm$/i.test(u || ''));
+    const other = [el.src, el.srcAlt].find((u) => u && !/\.(mov|webm)$/i.test(u));
+    return (apple ? mov || webm : webm || mov) || other || el.src || el.srcAlt;
+  }
+  // Calienta la siguiente escena para que el salto no parpadee
+  function preloadNext(el) {
+    if (!el) return;
+    if (el.type === 'video') { warm.src = pickSrc(el) || ''; warm.load(); }
+    else if (el.type === 'image' && el.src) new Image().src = el.src;
+  }
 
   function startAR() {
     show('screenAR');
-    idx = -1; started = false; unlockAudio(); $('#btnSound').classList.add('hidden');
+    cancelAnimationFrame(raf);
+    idx = -1; started = false; curEl = null; unlockAudio();
     $('#silImg').src = exp.silhouetteSrc || '';
     $('#silImg').style.display = exp.silhouetteSrc ? '' : 'none';
-    hide(['#textPanel', '#modal', '#stage', '#btnNextF']);
+    hide(['#textPanel', '#modal', '#stage', '#btnNextF', '#btnSound']);
     $('#stage').innerHTML = '';
     $('#silhouette').classList.remove('hidden');
     $('#loading').classList.remove('hidden');
@@ -123,23 +137,30 @@
 
   function next() {
     const els = exp.elements || [];
+    cancelAnimationFrame(raf);
     idx++;
     if (idx >= els.length) return closeAR();
-    curEl = els[idx];
+    curEl = els[idx]; txSrc = null; shown = -2; paused = false;
+    vEnded = false; mediaReady = false; sceneT = 0; lastTs = 0;
     const last = idx === els.length - 1;
     const stage = $('#stage');
-    hide(['#textPanel', '#btnNextF']);
-    stopAudio();
-    if (curEl.type === 'text') { stage.classList.remove('hidden'); return showText(last); }
-    vid.pause(); vid.onended = null;
+    hide(['#textPanel', '#btnNextF', '#modal']); stopAudio();
+    vid.pause(); vid.onended = null; vid.onerror = null;
     stage.classList.remove('hidden');
+
+    if (curEl.type === 'text') { txSrc = curEl; return showText(last); }  // paso de texto aparte
+    preloadNext(els[idx + 1]);
     if (curEl.type === 'video') {
       stage.innerHTML = ''; stage.appendChild(vid);
-      vid.src = pickSrc(curEl); vid.muted = false;
-      vid.onended = next;
+      vid.src = pickSrc(curEl) || ''; vid.muted = false;
+      vid.onended = () => { vEnded = true; sceneT = vid.duration || sceneT; };
+      vid.onerror = () => { vEnded = true; };
+      mediaReady = true;
       vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}); });
     } else {
       stage.innerHTML = `<img src="${curEl.src}" alt="">`;
+      const im = stage.querySelector('img');
+      if (im.complete) mediaReady = true; else im.onload = im.onerror = () => { mediaReady = true; };
       $('#btnNextF').textContent = last ? t('close') : t('next');
       $('#btnNextF').classList.remove('hidden');
       if (curEl.audioSrc) {
@@ -149,38 +170,79 @@
         soundLabel();
       }
     }
+    raf = requestAnimationFrame(tick);
   }
 
-  // iPhone/Safari reproduce .mov con transparencia; Chrome/Android usan .webm
-  function pickSrc(el) {
-    const apple = /iP(hone|ad|od)/.test(navigator.userAgent) || /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const mov = [el.src, el.srcAlt].find((u) => /\.mov$/i.test(u || ''));
-    const webm = [el.src, el.srcAlt].find((u) => /\.webm$/i.test(u || ''));
-    const other = [el.src, el.srcAlt].find((u) => u && !/\.(mov|webm)$/i.test(u));
-    return (apple ? mov || webm : webm || mov) || other || el.src || el.srcAlt;
+  // Reloj de la escena: en video manda el tiempo del propio video (si se traba, el texto espera)
+  function tick(ts) {
+    const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.25) : 0;
+    lastTs = ts;
+    if (!paused && curEl) {
+      if (curEl.type === 'video' && !vEnded) sceneT = vid.currentTime;
+      else if (mediaReady) sceneT += dt;
+      showLayer();
+      const end = (curEl.layers || []).reduce((m, l) => (l.duration > 0 ? Math.max(m, (l.start || 0) + l.duration) : m), 0);
+      if (curEl.type === 'video' && vEnded && sceneT >= end) return next();
+      if (curEl.type === 'image' && curEl.duration > 0 && sceneT >= Math.max(curEl.duration, end)) return next();
+    }
+    raf = requestAnimationFrame(tick);
   }
 
-  function showText(last) {
+  // Muestra la capa de texto activa en este segundo (si se encimen, la que empezó más tarde)
+  function showLayer() {
+    const ls = curEl.layers || [];
+    let k = -1;
+    ls.forEach((l, i) => {
+      const s = l.start || 0, e = l.duration > 0 ? s + l.duration : Infinity;
+      if (sceneT >= s && sceneT < e && (k < 0 || s >= (ls[k].start || 0))) k = i;
+    });
+    if (k === shown) return;
+    shown = k;
+    if (k < 0) { $('#textPanel').classList.add('hidden'); return; }
+    txSrc = ls[k];
+    renderPanel(false, false);
+  }
+
+  function renderPanel(standalone, last) {
     const x = getText();
-    if (!x.title && !x.body) return next();
+    if (!x.title && !x.body) { $('#textPanel').classList.add('hidden'); return false; }
     $('#textTitle').textContent = x.title;
     $('#textBody').textContent = x.body;
     $('#btnNextP').textContent = t('next');
-    $('#btnNextP').classList.toggle('hidden', last);
+    $('#btnNextP').classList.toggle('hidden', !standalone || last);
+    $('#btnClose').classList.toggle('hidden', !standalone);
     $('#textPanel').classList.remove('hidden');
     const b = $('#textBody');
     $('#btnMore').classList.toggle('hidden', !(b.scrollHeight > b.clientHeight + 1));
+    return true;
+  }
+  function showText(last) { if (!renderPanel(true, last)) next(); }
+
+  // "Leer más" pausa la escena mientras el visitante lee
+  function openMore() {
+    const x = getText();
+    $('#modalTitle').textContent = x.title;
+    $('#modalBody').textContent = x.body;
+    $('#modal').classList.remove('hidden');
+    paused = true; vid.pause();
+  }
+  function closeMore() {
+    $('#modal').classList.add('hidden');
+    paused = false;
+    if (curEl && curEl.type === 'video' && !vEnded) vid.play().catch(() => {});
   }
 
   function resetExp() {
-    stopAudio(); vid.pause(); vid.onended = null; started = false; idx = -1;
+    cancelAnimationFrame(raf); stopAudio(); vid.pause(); vid.onended = null;
+    started = false; idx = -1; curEl = null; txSrc = null; paused = false;
     hide(['#textPanel', '#stage', '#btnNextF', '#modal']);
     $('#stage').innerHTML = '';
     $('#silhouette').classList.remove('hidden');
   }
 
   function closeAR() {
-    stopAudio(); vid.pause(); vid.onended = null;
+    cancelAnimationFrame(raf); stopAudio(); vid.pause(); vid.onended = null;
+    curEl = null; paused = false;
     const scene = document.querySelector('a-scene');
     try { scene.systems['mindar-image-system'].stop(); } catch (e) {}
     $('#sceneHolder').innerHTML = '';
