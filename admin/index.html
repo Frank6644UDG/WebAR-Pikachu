@@ -51,6 +51,9 @@
   .pvsound{position:absolute;top:12px;left:12px;background:#000a;border:1.5px solid #fff6}
   .pvaim{position:absolute;left:0;right:0;top:62%;text-align:center}
   .pvaim span{background:#000a;padding:8px 14px;border-radius:999px}
+  .layers{margin-top:12px;padding-top:8px;border-top:1px dashed #c9ced8}
+  .layer{border:1px solid #e1e4ea;border-left:4px solid #6c8cff;border-radius:8px;padding:10px;margin:10px 0;background:#fff}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:900px){body{flex-direction:column}aside{width:100%}#phoneCol{position:static;width:100%}}
 </style>
 </head>
@@ -64,13 +67,14 @@
 <div id="phoneCol">
   <h3>Vista previa</h3>
   <div id="pvChips"></div>
+  <div id="pvTime" style="text-align:center;margin-bottom:8px"></div>
   <div class="phoneWrap"><div class="phone"><div class="pvscreen" id="pvScreen"></div></div></div>
   <small style="text-align:center">Así se ve en un teléfono, con el idioma de la pestaña elegida. Toca un elemento para verlo.</small>
 </div>
 
 <script>
 const LANGS = { es:'Español', en:'English', ja:'日本語', zh:'中文', ko:'한국어' };
-const TYPES = { video:'Video', image:'Imagen / animación WebP', text:'Texto' };
+const TYPES = { video:'Video', image:'Imagen / animación WebP', text:'Texto (paso aparte)' };
 const PV = {
   es:{more:'Leer más',next:'Siguiente',close:'Cerrar',aim:'Enfoca la silueta',mute:'Silenciar'},
   en:{more:'Read more',next:'Next',close:'Close',aim:'Aim at the outline',mute:'Mute'},
@@ -109,9 +113,10 @@ function elHtml(el, i) {
          <label>Video alternativo (.webm con transparencia para Android y Chrome) - opcional</label>${fi('srcAlt','.webm,video/webm')}`
       : `<label>Imagen o animación (.webp animado, .png, .jpg, .gif)</label>${fi('src','image/*')}
          <label>Audio (opcional, .mp3 o .m4a). El visitante podrá silenciarlo.</label>${fi('audioSrc','audio/*,.mp3,.m4a,.ogg')}`;
+  const layers = el.type === 'text' ? '' : layersHtml(el, i);
   return `<div class="el"><div class="elh"><b>Elemento ${i+1}</b>
     <select data-type="${i}">${Object.entries(TYPES).map(([k,v]) => `<option value="${k}" ${el.type===k?'selected':''}>${v}</option>`).join('')}</select>
-    <span><button data-up="${i}">↑</button><button data-down="${i}">↓</button><button data-del="${i}">✕</button></span></div>${body}</div>`;
+    <span><button data-up="${i}">↑</button><button data-down="${i}">↓</button><button data-del="${i}">✕</button></span></div>${body}${layers}</div>`;
 }
 function qrHtml() {
   if (!cur.id) return '<fieldset><legend>Código QR para plantilla (stencil)</legend><p>Guarda la experiencia para poder generar su QR.</p></fieldset>';
@@ -152,6 +157,18 @@ function render() {
   on('[data-del]', n => cur.elements.splice(+n.dataset.del, 1));
   on('[data-up]', n => { const i=+n.dataset.up; if (i>0) { [cur.elements[i-1],cur.elements[i]]=[cur.elements[i],cur.elements[i-1]]; pv=i-1; } });
   on('[data-down]', n => { const i=+n.dataset.down, e=cur.elements; if (i<e.length-1) { [e[i+1],e[i]]=[e[i],e[i+1]]; pv=i+1; } });
+  on('[data-addlayer]', n => { const e = cur.elements[+n.dataset.addlayer]; e.layers = (e.layers || []).concat({ start:0, duration:0, texts:{} }); pv = +n.dataset.addlayer; });
+  on('[data-dellayer]', n => { const [i, j] = n.dataset.dellayer.split('.').map(Number); cur.elements[i].layers.splice(j, 1); pv = i; });
+  document.querySelectorAll('[data-ls],[data-ld],[data-lt],[data-lb],[data-dur]').forEach(inp => {
+    const key = () => inp.dataset.ls || inp.dataset.ld || inp.dataset.lt || inp.dataset.lb || inp.dataset.dur;
+    inp.oninput = () => {
+      sync();
+      const k = key(), w = document.querySelector(`[data-warn="${k}"]`);
+      if (w) { const [i, j] = k.split('.').map(Number); w.innerHTML = warnHtml(cur.elements[i].layers[j]); }
+      renderPreview();
+    };
+    inp.onfocus = () => { pv = parseInt(key()); renderPreview(); };
+  });
   document.querySelectorAll('[data-type]').forEach(s => s.onchange = () => { sync(); cur.elements[+s.dataset.type].type = s.value; render(); });
   document.querySelectorAll('.el').forEach((d, i) => d.addEventListener('click', () => { pv = i; renderPreview(); }));
   document.querySelectorAll('[data-ti],[data-tb]').forEach(inp => {
@@ -188,13 +205,61 @@ function media(el) {
   }
   return '';
 }
+const CPS = { es:17, en:17, ja:8, zh:9, ko:9 };   // caracteres que se leen por segundo (guía aproximada)
+let pvT = 0;
+function warnHtml(l) {
+  if (!l || !(l.duration > 0)) return '';
+  const bad = Object.keys(LANGS).map(k => {
+    const t = (l.texts && l.texts[k]) || {}, n = (t.title || '').length + (t.body || '').length, need = Math.ceil(n / CPS[k]);
+    return need > l.duration ? `${LANGS[k]} ≥ ${need} s` : '';
+  }).filter(Boolean);
+  return bad.length ? `<small style="color:#b45309">⚠ Texto largo para esta duración (guía aproximada de lectura): ${bad.join(', ')}</small>` : '';
+}
+function layerHtml(l, i, j) {
+  const tx = (l.texts && l.texts[tab]) || { title:'', body:'' }, k = `${i}.${j}`;
+  return `<div class="layer"><div class="elh"><b>Capa ${j+1}</b><button data-dellayer="${k}">✕</button></div>
+    <div class="grid2">
+      <div><label>Aparece en el segundo</label><input type="number" min="0" step="0.5" data-ls="${k}" value="${l.start || 0}"></div>
+      <div><label>Dura (s) · 0 = hasta que termina la escena</label><input type="number" min="0" step="0.5" data-ld="${k}" value="${l.duration || 0}"></div>
+    </div>
+    <label>Título (${LANGS[tab]})</label><input type="text" data-lt="${k}" value="${esc(tx.title)}">
+    <label>Texto (${LANGS[tab]})</label><textarea data-lb="${k}">${esc(tx.body)}</textarea>
+    <div data-warn="${k}">${warnHtml(l)}</div></div>`;
+}
+function layersHtml(el, i) {
+  return `<div class="layers"><b>Capas de texto</b> <small>aparecen sobre la escena, en el segundo que indiques</small>
+    ${el.type === 'image' ? `<label>Duración de la escena (s) · 0 = espera el botón Siguiente</label><input type="number" min="0" step="0.5" data-dur="${i}" value="${el.duration || 0}">` : ''}
+    ${(el.layers || []).map((l, j) => layerHtml(l, i, j)).join('')}
+    <div class="add"><button data-addlayer="${i}">＋ Capa de texto</button></div></div>`;
+}
+function activeAt(el, t) {
+  const ls = el.layers || []; let k = -1;
+  ls.forEach((l, x) => { const s = l.start || 0, e = l.duration > 0 ? s + l.duration : Infinity; if (t >= s && t < e && (k < 0 || s >= (ls[k].start || 0))) k = x; });
+  return k < 0 ? null : ls[k];
+}
 function renderPreview() {
-  const sc = $('#pvScreen'); if (!sc || !cur) return;
-  const L = PV[tab] || PV.en, els = cur.elements;
+  if (!$('#pvScreen') || !cur) return;
+  const els = cur.elements;
   if (pv >= els.length) pv = els.length - 1;
   $('#pvChips').innerHTML = [['-1','Silueta'], ...els.map((e,i) => [String(i), String(i+1)])]
     .map(([v,l]) => `<button data-pv="${v}" class="${+v===pv?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('#pvChips button').forEach(b => b.onclick = () => { pv = +b.dataset.pv; renderPreview(); });
+  const el = pv >= 0 ? els[pv] : null;
+  if (el && el.type !== 'text') {
+    const ends = (el.layers || []).map(l => (l.start || 0) + (l.duration > 0 ? l.duration : 0));
+    const max = Math.max(10, Math.ceil(Math.max(0, ...ends)) + 2);
+    pvT = Math.min(pvT, max);
+    $('#pvTime').innerHTML = `<input type="range" id="pvSlider" min="0" max="${max}" step="0.5" value="${pvT}" style="width:210px"><br><small style="text-align:center">segundo <b id="pvTl">${pvT}</b> de la escena</small>`;
+    $('#pvSlider').oninput = e => { pvT = +e.target.value; $('#pvTl').textContent = pvT; drawScreen(); };
+  } else $('#pvTime').innerHTML = '';
+  drawScreen();
+}
+function panelHtml(tx, L, buttons) {
+  return `<div class="pvpanel"><h2>${esc(tx.title)}</h2><div class="pvbody">${esc(tx.body) || '(vacío: no se muestra)'}</div><div class="pvrow">${buttons}</div></div>`;
+}
+function drawScreen() {
+  const sc = $('#pvScreen'); if (!sc || !cur) return;
+  const L = PV[tab] || PV.en, els = cur.elements;
   let h = '';
   if (pv < 0) {
     h = (cur.silhouetteSrc ? `<img src="${esc(cur.silhouetteSrc)}" alt="" style="position:absolute;left:15%;top:18%;width:70%;height:42%;object-fit:contain;filter:drop-shadow(0 0 6px #fff)">` : '')
@@ -203,12 +268,13 @@ function renderPreview() {
     const el = els[pv], last = pv === els.length - 1;
     if (el.type === 'text') {
       let j = pv - 1; while (j >= 0 && els[j].type === 'text') j--;
-      const tx = (el.texts && el.texts[tab]) || {};
-      h = (j >= 0 ? media(els[j]) : '') + `<div class="pvpanel"><h2>${esc(tx.title)}</h2><div class="pvbody">${esc(tx.body) || '(vacío: este elemento se omite)'}</div>
-        <div class="pvrow"><span class="pvb pvmore">${L.more}</span>${last ? '' : `<span class="pvb">${L.next}</span>`}<span class="pvb g">${L.close}</span></div></div>`;
+      h = (j >= 0 ? media(els[j]) : '') + panelHtml((el.texts && el.texts[tab]) || {}, L,
+        `<span class="pvb pvmore">${L.more}</span>${last ? '' : `<span class="pvb">${L.next}</span>`}<span class="pvb g">${L.close}</span>`);
     } else {
       h = media(el);
       if (el.type === 'image') h += `<span class="pvb pvfloat">${last ? L.close : L.next}</span>` + (el.audioSrc ? `<span class="pvb pvsound">🔇 ${L.mute}</span>` : '');
+      const lay = activeAt(el, pvT);
+      if (lay) h += panelHtml((lay.texts && lay.texts[tab]) || {}, L, `<span class="pvb pvmore">${L.more}</span>`);
     }
   }
   sc.innerHTML = h;
@@ -241,6 +307,16 @@ function sync() {
   cur.elements.forEach((el, i) => {
     const ti = document.querySelector(`[data-ti="${i}"]`), tb = document.querySelector(`[data-tb="${i}"]`);
     if (ti && tb) { el.texts = el.texts || {}; el.texts[tab] = { title: ti.value, body: tb.value }; }
+    const dur = document.querySelector(`[data-dur="${i}"]`);
+    if (dur) el.duration = Math.max(0, parseFloat(dur.value) || 0);
+    (el.layers || []).forEach((l, j) => {
+      const g = (a) => document.querySelector(`[data-${a}="${i}.${j}"]`);
+      if (!g('ls')) return;
+      l.start = Math.max(0, parseFloat(g('ls').value) || 0);
+      l.duration = Math.max(0, parseFloat(g('ld').value) || 0);
+      l.texts = l.texts || {};
+      l.texts[tab] = { title: g('lt').value, body: g('lb').value };
+    });
   });
 }
 async function save() {
